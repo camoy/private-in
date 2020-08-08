@@ -3,7 +3,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; provide
 
-(provide (rename-out [-require require]))
+(provide (rename-out [-require require])
+         private-in
+         only-private-in)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
@@ -16,6 +18,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; shadow require
 
+;; Replacement for `require` that handles private specs.
 (define-syntax (-require stx)
   (syntax-parse stx
     [(_) #'(void)]
@@ -26,6 +29,7 @@
          (require-private ?spec))]
     [(_ ?spec ...) #'(begin (-require ?spec) ...)]))
 
+;; Defines private identifiers.
 (define-syntax (require-private stx)
   (define var-ref (syntax-local-value (datum->syntax stx 'var-ref)))
   (syntax-parse stx
@@ -34,17 +38,27 @@
      #'(begin ?defn ...)]))
 
 (begin-for-syntax
+  ;; [Parameter [Or #f Variable-Reference]]
+  ;; Is either false (meaning the require transformer should not import private
+  ;; identifiers) or a variable reference from the use site allowing us to
+  ;; inspect private identifiers.
   (define private-too? (make-parameter #f))
 
+  ;; Syntax Variable-Reference → [Listof Syntax]
+  ;; Returns a list of identifier definitions for private bindings.
   (define (private-defns spec var-ref)
     (define-values (imports _)
       (parameterize ([private-too? var-ref])
         (expand-import spec)))
     (map import->defn (filter private-import? imports)))
 
+  ;; Import → Boolean
+  ;; Return if the import is private.
   (define (private-import? i)
     (syntax-property (import-orig-stx i) 'private-mpi))
 
+  ;; Import → Syntax
+  ;; Return the definition associated with an import.
   (define (import->defn i)
     (match-define (import local-id src-sym _ _ _ orig-mode orig-stx) i)
     (define mpi (syntax-property orig-stx 'private-mpi))
@@ -64,6 +78,8 @@
 ;; require transformers
 
 (begin-for-syntax
+  ;; Boolean → (Syntax → [Listof Import] [Listof Import-Src])
+  ;; Constructs a require transformer for private bindings.
   (define ((make-private-require-transformer public-too?) stx)
     (syntax-parse stx
       [(_ ?mp)
@@ -80,7 +96,6 @@
            [var-ref
             (define mpi-base (variable-reference->module-path-index var-ref))
             (define mpi (module-path-index-join mp mpi-base))
-            (dynamic-require mpi #f)
             (define indirect-exports (module->indirect-exports mpi))
             (for*/list ([phase+syms (in-list indirect-exports)]
                         [sym (in-list (cdr phase+syms))])
@@ -93,16 +108,21 @@
 
        (values (append imports private-imports) import-srcs)]))
 
+  ;; Datum → Datum
+  ;; Constructs a module path that handles submodules properly from a require
+  ;; spec module path.
   (define (module-path-do-submod spec)
     (match spec
       [`(quote ,id) `(submod "." ,id)]
       [_ spec]))
   )
 
+;; Require transformer for private and public bindings.
 (define-syntax private-in
   (make-require-transformer
    (make-private-require-transformer #t)))
 
+;; Require transformer for only private bindings.
 (define-syntax only-private-in
   (make-require-transformer
    (make-private-require-transformer #f)))
