@@ -60,18 +60,23 @@
   ;; Import → Syntax
   ;; Return the definition associated with an import.
   (define (import->defn i)
-    (match-define (import local-id src-sym _ _ _ orig-mode orig-stx) i)
-    (define mpi (syntax-property orig-stx 'private-mpi))
-    (define quoted-src-sym #`(quote #,src-sym))
-    #`(define-syntax #,local-id
-        (make-rename-transformer
-         (syntax-binding-set->syntax
-          (syntax-binding-set-extend
-           (syntax-binding-set)
-           #,quoted-src-sym
-           #,orig-mode
-           #,mpi)
-          #,quoted-src-sym))))
+    (match-define (import local-id src-sym _ mode _ orig-mode orig-stx) i)
+    (define define-for-?
+      (case mode
+        [(0) #'define]
+        [(1) #'define-for-syntax]
+        [else
+         (raise-syntax-error 'require-private
+                             "can only require for phase 0 or 1")]))
+    (define private-id
+      (syntax-binding-set->syntax
+       (syntax-binding-set-extend
+        (syntax-binding-set)
+        src-sym
+        orig-mode
+        (syntax-property orig-stx 'private-mpi))
+       src-sym))
+    #`(#,define-for-? #,local-id #,private-id))
   )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

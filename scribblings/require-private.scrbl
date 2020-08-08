@@ -4,17 +4,20 @@
                     rackunit
                     (except-in racket/base require)]]
 
-@title{require-private}
+@title{Require Private}
 @author{Cameron Moy}
 
 @defmodule[require-private]
 
 This module provides functionality like @code{require/expose},
 but as a require spec instead.
+Importing private bindings
+should be considered @bold{unsafe}---use
+at your own risk.
 
 @defform[(private-in module-path)]{
-  Imports all exported bindings from @code{module-path}
-  and unexported run-time bindings.
+  Imports all exported bindings from @code{module-path},
+  including unexported run-time bindings.
 }
 
 @defform[(only-private-in module-path)]{
