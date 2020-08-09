@@ -68,14 +68,16 @@
         [else
          (raise-syntax-error 'require-private
                              "can only require for phase 0 or 1")]))
+    (define sym (gensym))
     (define private-id
       (syntax-binding-set->syntax
        (syntax-binding-set-extend
         (syntax-binding-set)
-        src-sym
+        sym
         orig-mode
-        (syntax-property orig-stx 'private-mpi))
-       src-sym))
+        (syntax-property orig-stx 'private-mpi)
+        #:source-symbol src-sym)
+       sym))
     #`(#,define-for-? #,local-id #,private-id))
   )
 
