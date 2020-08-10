@@ -188,8 +188,6 @@
   ;; Just to make sure this doesn't fail
   (-require (private-in 'b))
 
-  (define-namespace-anchor a)
-
   (chk
    submod:foo 42
    (submod:dbl 7) 14
