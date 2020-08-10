@@ -17,11 +17,7 @@ at your own risk.
 
 @defform[(private-in module-path)]{
   Imports all exported bindings from @code{module-path},
-  including unexported run-time bindings.
-}
-
-@defform[(only-private-in module-path)]{
-  Imports only unexported run-time bindings from @code{module-path}.
+  including unexported run-time and transformer bindings.
 }
 
 @defform[(require require-spec ...)]{
