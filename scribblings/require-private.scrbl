@@ -16,12 +16,12 @@ should be considered @bold{unsafe}---use
 at your own risk.
 
 @defform[(private-in module-path)]{
-  Imports all exported bindings from @code{module-path},
-  including unexported run-time and transformer bindings.
+  Imports provided bindings from @code{module-path}
+  and unexported run-time and transformer bindings
+  defined in the module.
 }
 
 @defform[(require require-spec ...)]{
   You must use the @code{require} exported by this module
   instead of the base @code{require}.
-  Otherwise, the private identifiers will not be defined.
 }

@@ -25,38 +25,30 @@
     [(_) #'(void)]
     [(_ ?spec)
      #'(begin
-         (define-var-ref)
+         (begin-for-syntax
+           (set-box! boxed-var-ref (#%variable-reference)))
          (require (public-in ?spec))
          (define-require-private ?spec))]
     [(_ ?spec ...) #'(begin (-require ?spec) ...)]))
 
-;; Initializes syntax local values needed for the private require transformers.
-(define-syntax (define-var-ref stx)
-  (syntax-local-introduce
-   (if (syntax-local stx 'var-ref)
-       #'(void)
-       #'(define-syntax var-ref (#%variable-reference)))))
-
 ;; Defines private identifiers.
 (define-syntax (define-require-private stx)
-  (define var-ref (syntax-local stx 'var-ref))
   (syntax-parse stx
     [(_ ?spec)
-     #:with (?defn ...) (private-defns #'?spec var-ref)
+     #:with (?defn ...) (private-defns #'?spec)
      #'(begin ?defn ...)]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; shadow require helpers
 
 (begin-for-syntax
-  ;; Syntax Symbol → [Or #f Any]
-  ;; Returns the syntax binding for `sym` in the syntax's lexical context.
-  (define (syntax-local stx sym)
-    (syntax-local-value (datum->syntax stx sym) (λ () #f)))
+  ;; [Box [Or #f Variable-Reference]]
+  ;; A box that contains a variable reference.
+  (define boxed-var-ref (box #f))
 
-  ;; Syntax Variable-Reference → [Listof Syntax]
+  ;; Syntax → [Listof Syntax]
   ;; Returns a list of identifier definitions for private bindings.
-  (define (private-defns spec var-ref)
+  (define (private-defns spec)
     (define-values (imports _)
       (expand-import spec))
     (map import->defn (filter private-import-mpi imports)))
@@ -100,7 +92,7 @@
           (expand-import #'?mp))
 
         ;; private imports
-        (define var-ref (syntax-local stx 'var-ref))
+        (define var-ref (unbox boxed-var-ref))
         (unless var-ref
           (raise-syntax-error 'private-in
                               "use the require form provided by require-private"
