@@ -4,8 +4,7 @@
 ;; provide
 
 (provide (rename-out [-require require])
-         private-in
-         only-private-in)
+         private-in)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
@@ -13,6 +12,7 @@
 (require (for-syntax racket/base
                      racket/function
                      racket/match
+                     racket/list
                      syntax/parse
                      racket/require-transform))
 
@@ -26,7 +26,7 @@
     [(_ ?spec)
      #'(begin
          (define-var-ref)
-         (require (only-public-in ?spec))
+         (require (public-in ?spec))
          (define-require-private ?spec))]
     [(_ ?spec ...) #'(begin (-require ?spec) ...)]))
 
@@ -82,61 +82,44 @@
         (private-import-mpi i)
         #:source-symbol src-sym)
        sym))
-    #`(define #,local-id #,private-id))
+    #`(define-syntax #,local-id (make-rename-transformer #'#,private-id)))
   )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require transformers
 
-(begin-for-syntax
-  ;; Boolean → (Syntax → [Listof Import] [Listof Import-Src])
-  ;; Constructs a require transformer for private bindings.
-  (define ((make-private-require-transformer public-too?) stx)
-    (syntax-parse stx
-      [(_ ?mp)
-       ;; public imports
-       (define mp (module-path-do-submod (syntax->datum #'?mp)))
-       (define-values (-imports import-srcs)
-         (expand-import #'?mp))
-       (define imports (if public-too? -imports null))
-
-       ;; private imports
-       (define var-ref (syntax-local stx 'var-ref))
-       (define mpi-base (variable-reference->module-path-index var-ref))
-       (define mpi (module-path-index-join mp mpi-base))
-       (define mp-stx (syntax-property (datum->syntax #f mp) 'private-mpi mpi))
-       (define indirect-exports (module->indirect-exports mpi))
-       (define private-imports
-         (for*/list ([phase+syms (in-list indirect-exports)]
-                     [sym (in-list (cdr phase+syms))])
-           (define phase (car phase+syms))
-           (define sym-stx (datum->syntax #f sym))
-           (define local-id (syntax-local-introduce sym-stx))
-           (import local-id sym mp-stx 0 0 phase sym-stx)))
-
-       (values (append imports private-imports) import-srcs)]))
-
-  ;; Datum → Datum
-  ;; Constructs a module path that handles submodules properly from a require
-  ;; spec module path.
-  (define (module-path-do-submod spec)
-    (match spec
-      [`(quote ,id) `(submod "." ,id)]
-      [_ spec]))
-  )
-
 ;; Require transformer for private and public bindings.
 (define-syntax private-in
   (make-require-transformer
-   (make-private-require-transformer #t)))
+   (λ (stx)
+     (syntax-parse stx
+       [(_ ?mp)
+        ;; public imports
+        (define mp (module-path-do-submod (syntax->datum #'?mp)))
+        (define-values (imports import-srcs)
+          (expand-import #'?mp))
 
-;; Require transformer for only private bindings.
-(define-syntax only-private-in
-  (make-require-transformer
-   (make-private-require-transformer #f)))
+        ;; private imports
+        (define var-ref (syntax-local stx 'var-ref))
+        (unless var-ref
+          (raise-syntax-error 'private-in
+                              "use the require form provided by require-private"
+                              stx))
+        (define mpi-base (variable-reference->module-path-index var-ref))
+        (define mpi (module-path-index-join mp mpi-base))
+        (define mp-stx (syntax-property (datum->syntax #f mp) 'private-mpi mpi))
+        (define private-syms (module->private-bindings mpi))
+        (define private-imports
+          (for*/list ([sym (in-list private-syms)])
+            (define sym-stx (datum->syntax #f sym))
+            (define local-id (syntax-local-introduce sym-stx))
+            (import local-id sym mp-stx 0 0 0 sym-stx)))
 
-;; Filter out private bindings.
-(define-syntax only-public-in
+        (values (append imports private-imports) import-srcs)]))))
+
+;; Filter out private bindings (these will be defined by `define-require-private`
+;; instead).
+(define-syntax public-in
   (make-require-transformer
    (λ (stx)
      (syntax-parse stx
@@ -147,6 +130,48 @@
                 import-srcs)]))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; require transformer helpers
+
+(begin-for-syntax
+  ;; Module-Path-Index → [Listof Symbol]
+  ;; Returns the private private run-time and transformer bindings for the given
+  ;; module.
+  (define (module->private-bindings mpi)
+    (dynamic-require mpi #f)
+    (define ns (module->namespace mpi))
+    (define ids
+      (parameterize ([current-namespace ns])
+        (map namespace-symbol->identifier (namespace-mapped-symbols))))
+    (define mpi-name
+      (resolved-module-path-name (module-path-index-resolve mpi)))
+    (filter-map
+     (λ (x)
+       (cond
+         [(or (identifier-binding x)
+              (identifier-binding (syntax-shift-phase-level x -1)))
+          =>
+          (λ (binding)
+            (define source-name
+              (resolved-module-path-name
+               (module-path-index-resolve
+                (first binding))))
+            (define phase (fifth binding))
+            (and (equal? mpi-name source-name)
+                 (= phase 0)
+                 (syntax-e x)))]
+         [else #f]))
+     ids))
+
+  ;; Datum → Datum
+  ;; Constructs a module path that handles submodules properly from a require
+  ;; spec module path.
+  (define (module-path-do-submod spec)
+    (match spec
+      [`(quote ,id) `(submod "." ,id)]
+      [_ spec]))
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; test
 
 (module+ test
@@ -155,31 +180,30 @@
   (module a racket/base
     (provide bar)
     (define foo 42)
-    (define bar 43))
+    (define bar 43)
+    (define-syntax-rule (dbl x)
+      (+ x x)))
 
-  (-require (prefix-in submod:both: (private-in 'a)))
-  (-require (prefix-in submod:only: (only-private-in 'a)))
-  (-require (only-in (only-private-in 'a) [foo foo*]))
-  (-require (prefix-in both: (private-in "test/mod.rkt")))
-  (-require (prefix-in only: (only-private-in "test/mod.rkt")))
+  (module b racket/base
+    (require (for-syntax racket/base))
+    (begin-for-syntax
+      (define foo 42)))
+
+  (-require (prefix-in submod: (private-in 'a)))
+  (-require (only-in (private-in 'a) [foo foo*]))
+  (-require (prefix-in mod: (private-in "test/mod.rkt")))
+
+  ;; Just to make sure this doesn't fail
+  (-require (private-in 'b))
 
   (define-namespace-anchor a)
 
   (chk
-   submod:both:foo 42
+   submod:foo 42
+   (submod:dbl 7) 14
    foo* 42
-   both:foo 42
+   mod:foo 42
 
-   submod:both:bar 43
-   both:bar 43
-
-   submod:only:foo 42
-   only:foo 42
-
-   #:! #:t
-   (namespace-variable-value
-    'only:bar
-    #t
-    (λ _ #f)
-    (namespace-anchor->namespace a))
+   submod:bar 43
+   mod:bar 43
    ))
