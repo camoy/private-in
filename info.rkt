@@ -2,11 +2,11 @@
 
 ;; General
 
-(define collection "require-private")
+(define collection "private-in")
 (define pkg-desc "Require private bindings.")
 (define version "0.0")
 (define pkg-authors '(camoy))
-(define scribblings '(("scribblings/require-private.scrbl" ())))
+(define scribblings '(("scribblings/private-in.scrbl" ())))
 (define compile-omit-paths '("test"))
 
 ;; Dependencies

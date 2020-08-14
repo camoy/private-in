@@ -1,13 +1,13 @@
 #lang scribble/manual
 
-@require[@for-label[require-private
+@require[@for-label[private-in
                     rackunit
                     (except-in racket/base require)]]
 
-@title{Require Private}
+@title{private-in}
 @author{Cameron Moy}
 
-@defmodule[require-private]
+@defmodule[private-in]
 
 This module provides functionality like @code{require/expose},
 but as a require spec instead.
