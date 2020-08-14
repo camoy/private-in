@@ -16,5 +16,5 @@ jobs:
           variant: 'regular'
           version: '7.8'
       - run: raco pkg install --auto || true
-      - run: raco setup require-private
+      - run: raco setup private-in
       - run: raco test --drdr .
