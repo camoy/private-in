@@ -9,12 +9,11 @@ jobs:
         with:
           path: ~/.racket
           key: ${{ runner.os }}-raco-${{ hashFiles('**/info.rkt') }}
-      - uses: Bogdanp/setup-racket@v0.6
+      - uses: Bogdanp/setup-racket@v1.7
         with:
           architecture: 'x64'
           distribution: 'full'
-          variant: 'regular'
-          version: '7.8'
+          version: 'current'
       - run: raco pkg install --auto || true
       - run: raco setup private-in
       - run: raco test --drdr .
